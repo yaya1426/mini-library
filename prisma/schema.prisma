@@ -1,0 +1,100 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [citext, pg_trgm]
+}
+
+enum UserRole {
+  MEMBER
+  LIBRARIAN
+
+  @@map("user_role")
+}
+
+model User {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fullName     String   @map("full_name") @db.Text
+  email        String   @unique @db.Citext
+  passwordHash String   @map("password_hash") @db.Text
+  role         UserRole @default(MEMBER)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  loans         Loan[] @relation("MemberLoans")
+  returnedLoans Loan[] @relation("ReturnedByLibrarian")
+  receivedFines Fine[] @relation("ReceivedByLibrarian")
+
+  @@map("users")
+}
+
+model Book {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title         String   @db.Text
+  author        String   @db.Text
+  description   String   @default("") @db.Text
+  isbn          String?  @unique @db.Text
+  coverImageUrl String?  @map("cover_image_url") @db.Text
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  copies Copy[]
+  loans  Loan[]
+
+  @@index([title(ops: raw("gin_trgm_ops"))], map: "books_title_trgm_idx", type: Gin)
+  @@index([author(ops: raw("gin_trgm_ops"))], map: "books_author_trgm_idx", type: Gin)
+  @@map("books")
+}
+
+model Copy {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookId      String    @map("book_id") @db.Uuid
+  barcode     String    @unique @db.Text
+  withdrawnAt DateTime? @map("withdrawn_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  book  Book   @relation(fields: [bookId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  loans Loan[]
+
+  @@unique([id, bookId], map: "copies_id_book_id_key")
+  @@index([bookId], map: "copies_book_id_idx")
+  @@map("copies")
+}
+
+model Loan {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId     String    @map("member_id") @db.Uuid
+  bookId       String    @map("book_id") @db.Uuid
+  copyId       String    @map("copy_id") @db.Uuid
+  borrowedAt   DateTime  @default(now()) @map("borrowed_at") @db.Timestamptz(6)
+  dueDate      DateTime  @map("due_date") @db.Date
+  returnedAt   DateTime? @map("returned_at") @db.Timestamptz(6)
+  returnedById String?   @map("returned_by_id") @db.Uuid
+
+  member     User  @relation("MemberLoans", fields: [memberId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  book       Book  @relation(fields: [bookId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  copy       Copy  @relation(fields: [copyId, bookId], references: [id, bookId], onDelete: Restrict, onUpdate: Restrict, map: "loans_copy_id_book_id_fkey")
+  returnedBy User? @relation("ReturnedByLibrarian", fields: [returnedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  fine       Fine?
+
+  @@map("loans")
+}
+
+model Fine {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  loanId       String    @unique @map("loan_id") @db.Uuid
+  daysLate     Int       @map("days_late")
+  dailyRateEgp Int       @map("daily_rate_egp")
+  amountEgp    Int       @map("amount_egp")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  paidAt       DateTime? @map("paid_at") @db.Timestamptz(6)
+  receivedById String?   @map("received_by_id") @db.Uuid
+
+  loan       Loan  @relation(fields: [loanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  receivedBy User? @relation("ReceivedByLibrarian", fields: [receivedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("fines")
+}
