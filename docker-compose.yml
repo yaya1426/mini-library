@@ -1,0 +1,34 @@
+# Mini Library + PostgreSQL.
+# Set DB_PASSWORD, SESSION_SECRET (32+ chars) and CRASH_TOKEN in the
+# environment or a .env file next to this file before `docker compose up`.
+
+services:
+  app:
+    build: .
+    restart: "no" # stays down after a crash (Round 1 demo)
+    ports: ["3000:3000"]
+    environment:
+      DATABASE_URL: postgresql://app:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/mini_library?schema=public
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+      CRASH_TOKEN: ${CRASH_TOKEN:-}
+    volumes: ["/root/library-logs:/app/logs"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mini_library
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+    volumes: ["db-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d mini_library"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data: {}
